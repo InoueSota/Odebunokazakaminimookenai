@@ -1,11 +1,14 @@
 using UnityEngine;
 
-public class CloudManager : MonoBehaviour
+public class MeterManager : MonoBehaviour
 {
     // パラメーター系
     private Vector3 nextPosition;
     private Vector3 originPosition;
     private Quaternion originRotation;
+
+    [Header("自オブジェクト取得")]
+    [SerializeField] private GameObject[] slots;
 
     [Header("他オブジェクト取得")]
     [SerializeField] private PlayerManager playerManager;
@@ -58,8 +61,22 @@ public class CloudManager : MonoBehaviour
     void Move()
     {
         // プレイヤーとの差を少しずつ作る
-        diffValue += (playerManager.GetClampDiffValue(targetDiffValue) - diffValue) * (chasePower * Time.deltaTime);
+        diffValue += (targetDiffValue - diffValue) * (chasePower * Time.deltaTime);
         // プレイヤーから一定量離して円運動
-        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue(false) + diffValue);
+        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue(false) + playerManager.GetAddMoveValue() + diffValue);
+    }
+    public void SetSlot()
+    {
+        for (int i = 1; i < slots.Length + 1; i++)
+        {
+            if (slots[i - 1] && i <= playerManager.GetRemainingPower())
+            {
+                slots[i - 1].SetActive(true);
+            }
+            else
+            {
+                slots[i - 1].SetActive(false);
+            }
+        }
     }
 }

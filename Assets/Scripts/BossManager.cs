@@ -1,14 +1,22 @@
 using UnityEngine;
+using UnityEngine.UI;
 
 public class BossManager : MonoBehaviour
 {
-    // パラメーター系
+    // 座標系
     private Vector3 originPosition;
     private Quaternion originRotation;
 
     [Header("他オブジェクト取得")]
     [SerializeField] private PlayerManager playerManager;
     [SerializeField] private GameObject ground;
+
+    [Header("体力系")]
+    [SerializeField] private float maxHp;
+    private float hp;
+    [SerializeField] private Slider hpSlider;
+    [SerializeField] private float healIntervalTime;
+    private float healIntervalTimer;
 
     [Header("回転移動")]
     [SerializeField] private float chasePower;
@@ -20,9 +28,11 @@ public class BossManager : MonoBehaviour
         originPosition = transform.position;
         originRotation = transform.localRotation;
 
+        hp = maxHp;
+
         // プレイヤーから一定量離して円運動
         diffValue = targetDiffValue;
-        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue() + diffValue);
+        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue(false) + diffValue);
     }
 
     void LateUpdate()
@@ -30,6 +40,8 @@ public class BossManager : MonoBehaviour
         Return();
 
         Move();
+
+        Hp();
     }
 
     void Return()
@@ -43,6 +55,34 @@ public class BossManager : MonoBehaviour
         // プレイヤーとの差を少しずつ作る
         diffValue += (targetDiffValue - diffValue) * (chasePower * Time.deltaTime);
         // プレイヤーから一定量離して円運動
-        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue() + diffValue);
+        transform.RotateAround(ground.transform.position, Vector3.back, playerManager.GetMoveValue(false) + diffValue);
+    }
+    void Hp()
+    {
+        hpSlider.value = Mathf.Clamp(hp / maxHp, 0f, 1f);
+
+        healIntervalTimer -= Time.deltaTime;
+        if (healIntervalTimer <= 0f)
+        {
+            hp++;
+            hp = Mathf.Clamp(hp, 0f, maxHp);
+            healIntervalTimer = healIntervalTime;
+        }
+    }
+
+    // Getter
+    public float GetDiffValue()
+    {
+        return diffValue;
+    }
+    public float GetHp()
+    {
+        return hp;
+    }
+
+    // Setter
+    public void Damage(float _damageValue)
+    {
+        hp -= _damageValue;
     }
 }

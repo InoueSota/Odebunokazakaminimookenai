@@ -1,14 +1,19 @@
 using UnityEngine;
+using DG.Tweening;
 
 public class PlayerManager : MonoBehaviour
 {
     // 自コンポーネント取得
+    private PlayerAttackManager attackManager;
     private InputManager inputManager;
     private bool isTriggerJump;
     private bool isReleaseJump;
     private bool isPushJump;
 
-    // パラメーター系
+    [Header("他オブジェクト取得")]
+    [SerializeField] private MeterManager meterManager;
+
+    // 座標系
     private Vector3 originPosition;
     private Quaternion originRotation;
     private Vector3 nextPosition;
@@ -16,19 +21,24 @@ public class PlayerManager : MonoBehaviour
     [Header("回転移動")]
     [SerializeField] private GameObject ground;
     [SerializeField] private float moveSpeed;
+    [SerializeField] private float followDiffValue;
     private float moveValue;
 
     [Header("チャージ")]
-    [SerializeField] private float chargeTime;
-    [SerializeField] private float addRotationZ;
-    private float chargeTimer;
+    [SerializeField] private float addRotateValue;
+    [SerializeField] private float rotationChasePower;
+    private float addRotationZ;
+    private float targetRotationZ;
+    private int remainingPower;
+    private int usePowerValue;
     private bool isCharging;
 
     [Header("ブースト")]
-    [SerializeField] private Vector2 boostBase;
-    [SerializeField] private float boostSpeed;
-    private Vector2 boostTarget;
+    [SerializeField] private Vector3 boostBase;
+    [SerializeField] private float boostTime;
+    private Vector3 boostTarget;
     private float addMoveValue;
+    private int boostLevel;
     private bool isBoosting;
 
     [Header("ジャンプ")]
@@ -50,14 +60,25 @@ public class PlayerManager : MonoBehaviour
 
     void Start()
     {
+        attackManager = GetComponent<PlayerAttackManager>();
         inputManager = GetComponent<InputManager>();
 
+        Initialize();
+    }
+    void Initialize()
+    {
+        // 座標系初期化
         originPosition = transform.position;
         nextPosition = originPosition;
         originRotation = transform.localRotation;
+
+        // フラグ類初期化
         isJumping = false;
         isHovering = false;
         isGravity = false;
+
+        // パラメーター初期化
+        remainingPower = 10;
     }
 
     void Update()
@@ -66,11 +87,9 @@ public class PlayerManager : MonoBehaviour
 
         Return();
 
-        nextPosition = transform.position;
-
+        CheckAction();
         Jump();
         Charge();
-        Boost();
         Hovering();
         Gravity();
 
@@ -82,7 +101,6 @@ public class PlayerManager : MonoBehaviour
     void Return()
     {
         // 移動量と回転量を初期化する
-        transform.position = nextPosition;
         transform.localRotation = originRotation;
     }
     void CheckAction()
@@ -96,8 +114,10 @@ public class PlayerManager : MonoBehaviour
             isJumping = true;
         }
         // 空中ジャンプチャージ
-        else if (!GetIsGround() && !isJumping && isPushJump)
+        else if (!GetIsGround() && 1 <= remainingPower && !isJumping && !isCharging && isPushJump)
         {
+            targetRotationZ = 0f;
+            isHovering = false;
             isGravity = false;
             isCharging = true;
         }
@@ -107,8 +127,7 @@ public class PlayerManager : MonoBehaviour
         // ジャンプ処理
         if (isJumping)
         {
-            float deltaJumpSpeed = jumpSpeed * Time.deltaTime;
-            nextPosition.y += (jumpTarget - nextPosition.y) * deltaJumpSpeed;
+            nextPosition.y += (jumpTarget - nextPosition.y) * (jumpSpeed * Time.deltaTime);
 
             // ジャンプ終了処理
             if (Mathf.Abs(jumpTarget - nextPosition.y) < 0.03f)
@@ -125,40 +144,59 @@ public class PlayerManager : MonoBehaviour
     {
         if (isCharging && !isBoosting)
         {
+            targetRotationZ += addRotateValue * Time.deltaTime;
 
+            usePowerValue = (int)-targetRotationZ / 360 + 1;
+            usePowerValue = Mathf.Clamp(usePowerValue, 0, remainingPower);
 
             // 空中ジャンプ
             if (isReleaseJump)
             {
-                boostTarget.x = boostBase.x + addMoveValue;
-                boostTarget.y = boostBase.y + nextPosition.y;
+                // Vector3.right（単位ベクトル）を回転させる
+                Vector3 moveDirection = Quaternion.Euler(0f, 0f, targetRotationZ + 90f) * Vector3.right;
+
+                // パワーを消費する
+                remainingPower -= usePowerValue;
+                meterManager.SetSlot();
+
+                // BoostLevelを調整
+                boostLevel = usePowerValue;
+
+                // newBoostには回転させたboostBaseを代入する
+                Vector3 newBoost = Vector3.zero;
+                newBoost.x = moveDirection.x * (boostBase.x * boostLevel);
+                newBoost.y = moveDirection.y * (boostBase.y * boostLevel);
+
+                // 現在の移動量に加算したnewBoostをboostTargetに代入する
+                boostTarget.x = newBoost.x + addMoveValue;
+                boostTarget.y = newBoost.y + nextPosition.y;
+
+                Boost();
+
+                // おなら
+                attackManager.AttackFart();
+
                 isBoosting = true;
             }
         }
+
+        addRotationZ += (targetRotationZ - addRotationZ) * (rotationChasePower * Time.deltaTime);
     }
     void Boost()
     {
-        if (isBoosting)
-        {
-            float deltaBoostSpeed = boostSpeed * Time.deltaTime;
+        DOTween.To(() => addMoveValue, (x) => addMoveValue = x, boostTarget.x, boostTime);
+        DOTween.To(() => nextPosition.y, (x) => nextPosition.y = x, boostTarget.y, boostTime).OnComplete(BoostComplete);
+    }
+    void BoostComplete()
+    {
+        addMoveValue = boostTarget.x;
+        nextPosition.y = boostTarget.y;
+        targetRotationZ = 0f;
 
-            // X軸処理
-            addMoveValue += (boostTarget.x - addMoveValue) * deltaBoostSpeed;
-            // Y軸処理
-            nextPosition.y += (boostTarget.y - nextPosition.y) * deltaBoostSpeed;
-
-            // ブースト終了処理
-            if (Mathf.Abs(boostTarget.y - nextPosition.y) < 0.03f)
-            {
-                addMoveValue = boostTarget.x;
-                nextPosition.y = boostTarget.y;
-
-                hangTimer = hangTime;
-                isHovering = true;
-                isCharging = false;
-                isBoosting = false;
-            }
-        }
+        hangTimer = hangTime;
+        isHovering = true;
+        isCharging = false;
+        isBoosting = false;
     }
     void Hovering()
     {
@@ -194,7 +232,6 @@ public class PlayerManager : MonoBehaviour
     {
         moveValue += moveSpeed * Time.deltaTime;
         transform.RotateAround(ground.transform.position, Vector3.back, moveValue + addMoveValue);
-        addRotationZ += 15 * Time.deltaTime;
         transform.rotation = Quaternion.Euler(transform.localEulerAngles.x, transform.localEulerAngles.y, transform.localEulerAngles.z + addRotationZ);
     }
 
@@ -226,12 +263,40 @@ public class PlayerManager : MonoBehaviour
         }
         return true;
     }
-    public float GetMoveValue()
+    public float GetMoveValue(bool _isFollow)
     {
+        if (_isFollow)
+        {
+            return moveValue + addMoveValue;
+        }
         return moveValue;
+    }
+    public float GetClampDiffValue(float _diffValue)
+    {
+        if (addMoveValue >= followDiffValue)
+        {
+            return addMoveValue - followDiffValue;
+        }
+        else if (addMoveValue <= -followDiffValue)
+        {
+            return addMoveValue + followDiffValue;
+        }
+        return _diffValue;
+    }
+    public float GetAddMoveValue()
+    {
+        return addMoveValue;
     }
     public float GetAddRotationZ()
     {
         return addRotationZ;
+    }
+    public int GetRemainingPower()
+    {
+        return remainingPower;
+    }
+    public int GetBoostLevel()
+    {
+        return boostLevel;
     }
 }
